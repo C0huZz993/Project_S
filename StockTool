@@ -1,4 +1,4 @@
-local CurrentConfig = "nil"
+local CurrentConfig = "Default"
 local CurrentClothing = "nil"
 local CurrentClothingName = "nil"
 local Configuration = {}
@@ -45,7 +45,7 @@ end
 
 local Rayfield = loadstring(game:HttpGet(("https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua")))()
 
-local Window = Rayfield:CreateWindow({Name = "Casual Stock Tool | by Tami4ka", LoadingTitle = "Powered by Rayfield", LoadingSubtitle = "by Tami4ka", 
+local Window = Rayfield:CreateWindow({Name = "Casual Stock Tool | by Tami4ka", LoadingTitle = "Powered by Rayfield", LoadingSubtitle = "by Tami4ka", 
 	Theme = "Default",
 
 	DisableRayfieldPrompts = false,
@@ -93,9 +93,9 @@ local ConfigsDropdown = Misc:CreateDropdown({
 	MultipleOptions = false,
 	Callback = function(Options)
 		if typeof(Options) == "table" then print("Unpack [1]") Options = table.unpack(Options) end
-		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
+		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
 
- 		CurrentConfig = Options
+ 		CurrentConfig = Options
 		Configuration = HttpService:JSONDecode(readfile(MainFolderName.."/"..CurrentConfig))
 		
 		LabelCurrentConfig:Set("Текущий конфиг: "..CurrentConfig)
@@ -169,9 +169,9 @@ local ClothingDropdown = Settings:CreateDropdown({
 	MultipleOptions = false,
 	Callback = function(Options)
 		if typeof(Options) == "table" then print("Unpack [1]") Options = table.unpack(Options) end
-		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
+		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
 
- 		CurrentClothing = Options
+ 		CurrentClothing = Options
 		MaxPrice = Configuration[CurrentClothing]["Max"]
 		MinPrice = Configuration[CurrentClothing]["Min"]
 		_G.CurrentObjectText = CurrentClothing
@@ -187,7 +187,12 @@ Settings:CreateButton({
 	Callback = function()
 		local Table = {}
 		for index, cloth in Configuration do
-			table.insert(Table, cloth.Clothing)
+			-- Обратите внимание: ваш `Configuration` теперь может содержать элементы, где ключ - это название одежды,
+			-- а не просто числовой индекс. Поэтому `Configuration` может быть итерирован как `for key, value in pairs(Configuration) do`.
+			-- Однако, если вы хотите получить список только названий, то:
+			if typeof(cloth) == "table" and cloth.Clothing then
+				table.insert(Table, cloth.Clothing)
+			end
 		end
 		ClothingDropdown:Refresh(Table)
 	end
@@ -196,13 +201,28 @@ Settings:CreateButton({
 Settings:CreateButton({
 	Name = "Удалить из списока [Config]",
 	Callback = function()
-		Configuration[CurrentClothing] = nil
+		if CurrentClothing and Configuration[CurrentClothing] then
+			Configuration[CurrentClothing] = nil
 
-		local Table = {}
-		for index, cloth in Configuration do
-			table.insert(Table, cloth.Clothing)
+			local Table = {}
+			for index, cloth in Configuration do
+				if typeof(cloth) == "table" and cloth.Clothing then
+					table.insert(Table, cloth.Clothing)
+				end
+			end
+			ClothingDropdown:Refresh(Table)
+			Notify('Успешно!', "Одежда '".. CurrentClothing .."' удалена.", 3)
+
+			-- Добавьте сохранение после удаления
+			if CurrentConfig and isfile(MainFolderName.."/"..CurrentConfig) then
+				writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+				Notify('Конфиг сохранен!', "Изменения конфига сохранены.", 3)
+			else
+				Notify("Ошибка сохранения!", "Текущий конфиг не выбран или не существует.", 5)
+			end
+		else
+			Notify("Ошибка!", "Не выбрана одежда для удаления.", 3)
 		end
-		ClothingDropdown:Refresh(Table)
 	end
 })
 
@@ -210,22 +230,32 @@ Settings:CreateButton({
 	Name = "Обновить/Создать одежду",
 	Callback = function()
 		print(_G.CurrentObjectText)
-		if _G.CurrentObjectText then
+		if _G.CurrentObjectText and _G.CurrentObjectText ~= "" then
 
 			Configuration[_G.CurrentObjectText] = {
 				["Clothing"] = _G.CurrentObjectText,
-				["Min"] = MinPrice,
-				["Max"] = MaxPrice
+				["Min"] = tonumber(MinPrice) or 0, -- Убедитесь, что это число
+				["Max"] = tonumber(MaxPrice) or 1  -- Убедитесь, что это число
 			}
 
 			Notify(_G.CurrentObjectText, "Макс. цена: "..MaxPrice.." | Мин. цена: "..MinPrice, 5)
+
+			-- НОВОЕ: Добавьте этот блок для сохранения конфига
+			if CurrentConfig and isfile(MainFolderName.."/"..CurrentConfig) then
+				writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+				Notify('Конфиг сохранен!', "Одежда добавлена/обновлена и конфиг сохранен.", 3)
+			else
+				Notify("Ошибка сохранения!", "Текущий конфиг не выбран или не существует.", 5)
+			end
+		else
+			Notify("Ошибка!", "Не выбрана одежда для добавления.", 3)
 		end
 	end
 })
 
 Settings:CreateInput({
 	Name = "Введите минимальную сумму покупки",
-	CurrentValue = "",
+	CurrentValue = tostring(MinPrice), -- Отображаем текущее значение
 	PlaceholderText = "number",
 	RemoveTextAfterFocusLost = true,
 	Flag = "Input1",
@@ -237,7 +267,7 @@ Settings:CreateInput({
 
 Settings:CreateInput({
 	Name = "Введите максимальную сумму покупки",
-	CurrentValue = "",
+	CurrentValue = tostring(MaxPrice), -- Отображаем текущее значение
 	PlaceholderText = "number",
 	RemoveTextAfterFocusLost = true,
 	Flag = "Input1",
@@ -269,8 +299,9 @@ ESP:CreateToggle({
 							local ItemPrice = Prompt.ActionText:gsub("%D", "")
 							local ItemName = Prompt.ObjectText
 							
-							for index, ClothingInTable in Configuration do
-								if ItemName == ClothingInTable.Clothing then
+							-- Изменено: теперь Configuration - это словарь, где ключи - названия одежды
+							for clothingName, ClothingInTable in pairs(Configuration) do
+								if ItemName == clothingName then -- Сравниваем ItemName с ключом (названием одежды)
 									if tonumber(ItemPrice) >= tonumber(ClothingInTable.Min) and tonumber(ItemPrice) <= tonumber(ClothingInTable.Max) then
 										local ESP_Highlight = Instance.new("Highlight")
 										ESP_Highlight.FillTransparency = 0.25
@@ -290,6 +321,17 @@ ESP:CreateToggle({
 
 		else
 			_G.ESP_Config = false
+			-- Добавим очистку ESP при выключении
+			for index, store in workspace.World.Debris.Stores:GetChildren() do
+				if not store:FindFirstChild("PlacementContainer") then continue end
+				for index, container in store.PlacementContainer:GetChildren() do
+					if not container:FindFirstChild("ItemContainer") then continue end
+					for index, clothing in container.ItemContainer:GetChildren() do
+						local Highlight_ESP = clothing:FindFirstChildOfClass("Highlight")
+						if Highlight_ESP then Highlight_ESP:Destroy() end
+					end
+				end
+			end
 		end
 	end
 })

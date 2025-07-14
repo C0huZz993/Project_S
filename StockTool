@@ -6,7 +6,7 @@ local ConfigsList = {}
 
 local ConfigName = "Default"
 local MainFolderName = "StockTool"
-local formatFile = [[.json]]
+local formatFile = ".json" -- Удаляем квадратные скобки
 
 local MinPrice = 0
 local MaxPrice = 1
@@ -15,12 +15,21 @@ local HttpService = game:GetService("HttpService")
 
 _G.ESP_Config = false
 
+print("Инициализация скрипта...")
+print("Основная папка для конфигов: " .. MainFolderName)
+
 if not isfolder(MainFolderName) then
 	makefolder(MainFolderName)
+	print("Папка '" .. MainFolderName .. "' создана.")
 end
 
-if not isfile(MainFolderName.."/Default"..formatFile) then
-	writefile(MainFolderName.."/Default"..formatFile, HttpService:JSONEncode(Configuration))
+-- Убедимся, что файл Default.json создается правильно
+local defaultConfigFile = MainFolderName .. "/Default" .. formatFile
+if not isfile(defaultConfigFile) then
+	writefile(defaultConfigFile, HttpService:JSONEncode(Configuration))
+	print("Файл '" .. defaultConfigFile .. "' создан с пустой конфигурацией.")
+else
+	print("Файл '" .. defaultConfigFile .. "' уже существует.")
 end
 
 if _G.ProximityPromptServicePromptShown or not _G.CurrentObjectText then
@@ -31,6 +40,7 @@ if _G.ProximityPromptServicePromptShown or not _G.CurrentObjectText then
 	ProximityPromptService.PromptShown:Connect(function(prompt)
 		_G.CurrentObjectText = prompt.ObjectText
 	end)
+	print("ProximityPromptServicePromptShown настроен.")
 end
 
 local function convertToTable(str)
@@ -44,8 +54,9 @@ local function convertToTable(str)
 end
 
 local Rayfield = loadstring(game:HttpGet(("https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua")))()
+print("Rayfield загружен.")
 
-local Window = Rayfield:CreateWindow({Name = "Casual Stock Tool | by Tami4ka", LoadingTitle = "Powered by Rayfield", LoadingSubtitle = "by Tami4ka", 
+local Window = Rayfield:CreateWindow({Name = "Casual Stock Tool | by Tami4ka", LoadingTitle = "Powered by Rayfield", LoadingSubtitle = "by Tami4ka",
 	Theme = "Default",
 
 	DisableRayfieldPrompts = false,
@@ -65,6 +76,7 @@ local Window = Rayfield:CreateWindow({Name = "Casual Stock Tool | by Tami4ka", L
 
 	KeySystem = false
 })
+print("Окно Rayfield создано.")
 
 local function Notify(name, content, time, image)
 	Rayfield:Notify({
@@ -73,6 +85,7 @@ local function Notify(name, content, time, image)
 		Duration = time or 5,
 		Image = image or 4483362458,
 	})
+	print("Уведомление: '" .. name .. "' - '" .. content .. "'")
 end
 
 Notify("Casual Stock Tool","Version - Alpha", 5)
@@ -80,42 +93,114 @@ Notify("Casual Stock Tool","Version - Alpha", 5)
 local Misc = Window:CreateTab("Configuration", 4483362458)
 local Settings = Window:CreateTab("Settings", 4483362458)
 local ESP = Window:CreateTab("ESP", 4483362458)
+print("Вкладки созданы.")
 
 _G.CurrentObjectText = ""
 
 local LabelCurrentConfig = Misc:CreateLabel("Текущий конфиг: "..CurrentConfig, "rewind")
 local InformationLabel = Settings:CreateLabel("Одежда для добавления: ".._G.CurrentObjectText.."\nМин. цена: "..MinPrice.."\n".."Макс. Цена: "..MaxPrice, "rewind")
+print("Лейблы инициализированы.")
 
+---
 local ConfigsDropdown = Misc:CreateDropdown({
 	Name = "Конфиг [Config]",
 	Options = ConfigsList,
 	CurrentOption = "...",
 	MultipleOptions = false,
 	Callback = function(Options)
-		if typeof(Options) == "table" then print("Unpack [1]") Options = table.unpack(Options) end
-		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
+		if typeof(Options) == "table" then Options = table.unpack(Options) end
+		
+		-- Очищаем текущий конфиг, чтобы избежать путаницы
+		CurrentConfig = nil
+		Configuration = {} -- Очищаем Configuration на случай ошибки
 
- 		CurrentConfig = Options
-		Configuration = HttpService:JSONDecode(readfile(MainFolderName.."/"..CurrentConfig))
+		print("Dropdown 'Конфиг' выбран: " .. tostring(Options))
+
+		-- Убедимся, что Options - это строка и содержит ".json"
+		if typeof(Options) == "string" and Options:match(formatFile .. "$") then
+			CurrentConfig = Options -- Options уже содержит имя файла с расширением
+			local fullPath = MainFolderName .. "/" .. CurrentConfig -- Формируем полный путь
+
+			print("Попытка загрузки конфига:")
+			print("  MainFolderName: " .. MainFolderName)
+			print("  CurrentConfig (из dropdown): " .. CurrentConfig)
+			print("  Полный путь к файлу: " .. fullPath)
+
+			if isfile(fullPath) then -- Проверяем существование файла по полному пути
+				local fileContent = readfile(fullPath)
+				if fileContent then
+					local success, decodedConfig = pcall(function()
+						return HttpService:JSONDecode(fileContent)
+					end)
+					if success then
+						Configuration = decodedConfig
+						Notify('Конфиг загружен!', "Конфиг '" .. CurrentConfig .. "' успешно загружен.", 3)
+						if next(Configuration) == nil then -- Проверяем, что Configuration не пуста после декодирования
+							Notify("Внимание!", "Конфиг '" .. CurrentConfig .. "' пуст. Возможно, он был сохранен без данных.", 5)
+						end
+					else
+						Notify("Ошибка декодирования!", "Файл конфига '" .. CurrentConfig .. "' содержит неверный JSON. " .. decodedConfig .. ". Конфигурация сброшена.", 7)
+						Configuration = {}
+					end
+				else
+					Notify("Ошибка чтения!", "Файл '" .. fullPath .. "' пуст или не удалось прочитать содержимое.", 5)
+					Configuration = {}
+					CurrentConfig = "nil"
+				end
+			else
+				Notify("Ошибка чтения!", "Файл конфига '" .. fullPath .. "' не найден. Сброс конфигурации.", 5)
+				Configuration = {} -- Сбросить конфигурацию, если файл не найден
+				CurrentConfig = "nil" -- Сбросить текущий конфиг
+			end
+		else
+			Notify("Ошибка выбора!", "Некорректная опция выбрана из списка конфигов: " .. tostring(Options) .. ". Выберите существующий .json файл.", 5)
+			Configuration = {}
+			CurrentConfig = "nil"
+		end
 		
 		LabelCurrentConfig:Set("Текущий конфиг: "..CurrentConfig)
 	end
 })
+print("Dropdown 'Конфиг' создан.")
 
 local Section = Misc:CreateSection("Настройка")
 
+---
 Misc:CreateButton({
 	Name = "Обновить список [Config]",
 	Callback = function()
-		ConfigsList = {}
-		for index, configurationFile in listfiles(MainFolderName) do
-			local lastSlash = configurationFile:find("/[^/]*$")
-			table.insert(ConfigsList, configurationFile:sub(lastSlash + 1))
+		ConfigsList = {} -- Очищаем список перед заполнением
+		print("Сканирование папки: " .. MainFolderName)
+		local files = listfiles(MainFolderName)
+		if files then
+			for index, configurationFile in files do
+				-- `configurationFile` приходит как "StockTool\saaddfar.json" или "StockTool/Default.json"
+				-- Нам нужно получить только "saaddfar.json" или "Default.json"
+
+				-- Извлекаем имя файла, независимо от используемого разделителя пути (\ или /)
+				local fileName = configurationFile:match("[/\\]([^/\\]+)$") -- Находит текст после последнего / или \
+				if not fileName then -- Если не найден разделитель (например, если это просто "Default.json")
+					fileName = configurationFile -- Тогда это уже имя файла
+				end
+				
+				print("  Найден файл: " .. configurationFile .. " -> Извлеченное имя файла: " .. fileName)
+				if fileName and fileName:match(formatFile .. "$") then -- Проверяем, что это наш .json файл
+					table.insert(ConfigsList, fileName) -- Добавляем только имя файла
+					print("    Добавлен в список: " .. fileName)
+				else
+					print("    Пропущен (не .json файл или некорректное имя): " .. tostring(fileName))
+				end
+			end
+		else
+			print("Не удалось получить список файлов из папки: " .. MainFolderName .. ". Возможно, папка не существует или пуста.")
 		end
 
 		ConfigsDropdown:Refresh(ConfigsList)
+		Notify("Список конфигов обновлен", "Теперь вы можете выбрать конфиг из списка.", 3)
+		print("Список конфигов обновлен в Dropdown.")
 	end
 })
+print("Кнопка 'Обновить список' создана.")
 
 Misc:CreateInput({
 	Name = "Введите имя конфига",
@@ -125,42 +210,77 @@ Misc:CreateInput({
 	Flag = "Input1",
 	Callback = function(Text)
 		ConfigName = Text
+		print("Имя конфига для создания/сохранения установлено: " .. ConfigName)
 	end,
 })
+print("Input 'Имя конфига' создан.")
 
 Misc:CreateButton({
 	Name = "Создать кофиг [Config]",
 	Callback = function()
-		if not isfile(MainFolderName.."/"..ConfigName..formatFile) then
-			local Config = HttpService:JSONEncode({})
-			Configuration = Config
-			writefile(MainFolderName.."/"..ConfigName..formatFile, Config)
+		if not ConfigName or ConfigName == "" or ConfigName == "Name" then
+			Notify("Ошибка!", "Введите корректное имя конфига перед созданием (не 'Name').", 3)
+			print("Попытка создания конфига с некорректным именем: " .. tostring(ConfigName))
+			return
+		end
 
-			Notify('Успешно!', "Название: ".. ConfigName, 5)
+		local fullConfigFileName = ConfigName .. formatFile -- Полное имя файла, например "MyConfig.json"
+		local fullPath = MainFolderName .. "/" .. fullConfigFileName
+
+		print("Попытка создания конфига:")
+		print("  ConfigName: " .. ConfigName)
+		print("  fullConfigFileName: " .. fullConfigFileName)
+		print("  Полный путь для создания: " .. fullPath)
+
+		if not isfile(fullPath) then
+			local emptyConfig = {} -- Создаем пустую таблицу
+			writefile(fullPath, HttpService:JSONEncode(emptyConfig))
+			Configuration = emptyConfig -- Установите Configuration как пустую таблицу
+			CurrentConfig = fullConfigFileName -- Установите CurrentConfig на полное имя нового файла
+
+			Notify('Успешно!', "Конфиг '" .. ConfigName .. "' создан.", 5)
+			LabelCurrentConfig:Set("Текущий конфиг: " .. CurrentConfig) -- Обновить метку
+			print("Конфиг '" .. ConfigName .. "' успешно создан по пути: " .. fullPath)
 		else
-			Notify("Конфиг с таким название уже существует", "попрорбуйте другое имя", 5)
+			Notify("Конфиг с таким названием уже существует", "Попробуйте другое имя.", 5)
+			print("Ошибка: Конфиг с именем '" .. ConfigName .. "' уже существует.")
 		end
 	end
 })
+print("Кнопка 'Создать конфиг' создана.")
 
 Misc:CreateButton({
 	Name = "Сохранить кофиг [Config]",
 	Callback = function()
-		if isfile(MainFolderName.."/"..CurrentConfig) then
-			Notify('Успешно!', "Название: ".. CurrentConfig, 5)
-			writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+		if CurrentConfig and CurrentConfig ~= "nil" and isfile(MainFolderName.."/"..CurrentConfig) then -- Проверяем, что CurrentConfig не "nil" и файл существует
+			print("Попытка сохранения конфига:")
+			print("  Текущий конфиг для сохранения: " .. CurrentConfig)
+			print("  Путь сохранения: " .. MainFolderName .. "/" .. CurrentConfig)
+			local success, errorMessage = pcall(function()
+				writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+			end)
+			if success then
+				Notify('Успешно!', "Конфиг '".. CurrentConfig .. "' сохранен.", 5)
+				print("Конфиг '".. CurrentConfig .. "' успешно сохранен.")
+			else
+				Notify("Ошибка сохранения!", "Не удалось сохранить конфиг '" .. CurrentConfig .. "'. Ошибка: " .. errorMessage, 7)
+				print("Ошибка сохранения конфига '" .. CurrentConfig .. "': " .. errorMessage)
+			end
 		else
-			Notify("Конфига с таким название не существует", "попрорбуйте другое имя", 5)
+			Notify("Ошибка сохранения!", "Текущий конфиг не выбран или не существует для сохранения.", 5)
+			print("Ошибка: Невозможно сохранить. Текущий конфиг: " .. tostring(CurrentConfig) .. ". Файл существует: " .. tostring(isfile(MainFolderName.."/"..CurrentConfig)))
 		end
 	end
 })
+print("Кнопка 'Сохранить конфиг' создана.")
 
 Misc:CreateButton({
 	Name = "Debug [/console]",
 	Callback = function()
-		print(HttpService:JSONEncode(Configuration))
+		print("Текущая конфигурация (JSON): " .. HttpService:JSONEncode(Configuration))
 	end
 })
+print("Кнопка 'Debug' создана.")
 
 local ClothingDropdown = Settings:CreateDropdown({
 	Name = "Одежда [Config]",
@@ -169,16 +289,29 @@ local ClothingDropdown = Settings:CreateDropdown({
 	MultipleOptions = false,
 	Callback = function(Options)
 		if typeof(Options) == "table" then print("Unpack [1]") Options = table.unpack(Options) end
-		if typeof(CurrentConfig) == "table" then print("Unpack [2]")  CurrentConfig = table.unpack(CurrentConfig) end
-
- 		CurrentClothing = Options
-		MaxPrice = Configuration[CurrentClothing]["Max"]
-		MinPrice = Configuration[CurrentClothing]["Min"]
-		_G.CurrentObjectText = CurrentClothing
 		
-		print(CurrentClothing, Options)
+		CurrentClothing = Options
+		print("Выбрана одежда из Dropdown: " .. tostring(CurrentClothing))
+
+		-- Проверяем, что Configuration[CurrentClothing] существует, прежде чем обращаться к его полям
+		if CurrentClothing and Configuration[CurrentClothing] then
+			MaxPrice = Configuration[CurrentClothing]["Max"]
+			MinPrice = Configuration[CurrentClothing]["Min"]
+			_G.CurrentObjectText = CurrentClothing
+			print("Цены для '" .. CurrentClothing .. "': Мин=" .. MinPrice .. ", Макс=" .. MaxPrice)
+		else
+			-- Сбросить значения, если одежда не найдена в конфиге
+			MinPrice = 0
+			MaxPrice = 1
+			_G.CurrentObjectText = CurrentClothing -- Сохраняем имя, даже если не найдено, для отладки
+			Notify("Внимание!", "Одежда '" .. tostring(CurrentClothing) .. "' не найдена в текущем конфиге. Цены сброшены.", 3)
+			print("Одежда '" .. tostring(CurrentClothing) .. "' не найдена в конфиге. Цены сброшены.")
+		end
+		
+		print("CurrentClothing: " .. tostring(CurrentClothing) .. ", Options: " .. tostring(Options))
 	end
 })
+print("Dropdown 'Одежда' создан.")
 
 local Section = Settings:CreateSection("Настройка")
 
@@ -186,72 +319,100 @@ Settings:CreateButton({
 	Name = "Обновить список [Config]",
 	Callback = function()
 		local Table = {}
-		for index, cloth in Configuration do
-			-- Обратите внимание: ваш `Configuration` теперь может содержать элементы, где ключ - это название одежды,
-			-- а не просто числовой индекс. Поэтому `Configuration` может быть итерирован как `for key, value in pairs(Configuration) do`.
-			-- Однако, если вы хотите получить список только названий, то:
-			if typeof(cloth) == "table" and cloth.Clothing then
-				table.insert(Table, cloth.Clothing)
-			end
+		print("Обновление списка одежды. Текущий конфиг содержит: " .. table.getn(Configuration) .. " элементов (если это массив).")
+		-- Используем pairs для итерации по таблице Configuration, так как ключи - это названия одежды
+		for clothingName, clothingData in pairs(Configuration) do
+			print("  Найден элемент в конфиге: " .. tostring(clothingName))
+			table.insert(Table, clothingName)
 		end
 		ClothingDropdown:Refresh(Table)
+		Notify("Список одежды обновлен", "Теперь вы можете выбрать одежду из списка.", 3)
+		print("Список одежды в Dropdown обновлен. Найдено: " .. table.getn(Table) .. " элементов.")
 	end
 })
+print("Кнопка 'Обновить список одежды' создана.")
 
 Settings:CreateButton({
 	Name = "Удалить из списока [Config]",
 	Callback = function()
 		if CurrentClothing and Configuration[CurrentClothing] then
+			print("Попытка удаления одежды: " .. CurrentClothing)
 			Configuration[CurrentClothing] = nil
 
 			local Table = {}
-			for index, cloth in Configuration do
-				if typeof(cloth) == "table" and cloth.Clothing then
-					table.insert(Table, cloth.Clothing)
-				end
+			for clothingName, clothingData in pairs(Configuration) do
+				table.insert(Table, clothingName)
 			end
 			ClothingDropdown:Refresh(Table)
 			Notify('Успешно!', "Одежда '".. CurrentClothing .."' удалена.", 3)
+			print("Одежда '".. CurrentClothing .."' успешно удалена из конфига.")
 
 			-- Добавьте сохранение после удаления
-			if CurrentConfig and isfile(MainFolderName.."/"..CurrentConfig) then
-				writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
-				Notify('Конфиг сохранен!', "Изменения конфига сохранены.", 3)
+			if CurrentConfig and CurrentConfig ~= "nil" and isfile(MainFolderName.."/"..CurrentConfig) then
+				local success, errorMessage = pcall(function()
+					writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+				end)
+				if success then
+					Notify('Конфиг сохранен!', "Изменения конфига сохранены.", 3)
+					print("Конфиг сохранен после удаления одежды.")
+				else
+					Notify("Ошибка сохранения!", "Не удалось сохранить конфиг после удаления. Ошибка: " .. errorMessage, 7)
+					print("Ошибка сохранения конфига после удаления: " .. errorMessage)
+				end
 			else
 				Notify("Ошибка сохранения!", "Текущий конфиг не выбран или не существует.", 5)
+				print("Ошибка: Невозможно сохранить после удаления. Текущий конфиг: " .. tostring(CurrentConfig))
 			end
+			CurrentClothing = nil -- Сбросить выбранную одежду после удаления
+			_G.CurrentObjectText = "" -- Очистить _G.CurrentObjectText
+			MinPrice = 0
+			MaxPrice = 1
 		else
-			Notify("Ошибка!", "Не выбрана одежда для удаления.", 3)
+			Notify("Ошибка!", "Не выбрана одежда для удаления или она отсутствует в конфиге.", 3)
+			print("Ошибка: Невозможно удалить. CurrentClothing: " .. tostring(CurrentClothing) .. ". В конфиге: " .. tostring(Configuration[CurrentClothing]))
 		end
 	end
 })
+print("Кнопка 'Удалить одежду' создана.")
 
 Settings:CreateButton({
 	Name = "Обновить/Создать одежду",
 	Callback = function()
-		print(_G.CurrentObjectText)
+		print("Попытка обновить/создать одежду. CurrentObjectText: " .. _G.CurrentObjectText)
 		if _G.CurrentObjectText and _G.CurrentObjectText ~= "" then
 
 			Configuration[_G.CurrentObjectText] = {
 				["Clothing"] = _G.CurrentObjectText,
 				["Min"] = tonumber(MinPrice) or 0, -- Убедитесь, что это число
-				["Max"] = tonumber(MaxPrice) or 1  -- Убедитесь, что это число
+				["Max"] = tonumber(MaxPrice) or 1, -- Убедитесь, что это число
 			}
+			print("Одежда '" .. _G.CurrentObjectText .. "' добавлена/обновлена в Configuration. Мин: " .. MinPrice .. ", Макс: " .. MaxPrice)
 
 			Notify(_G.CurrentObjectText, "Макс. цена: "..MaxPrice.." | Мин. цена: "..MinPrice, 5)
 
 			-- НОВОЕ: Добавьте этот блок для сохранения конфига
-			if CurrentConfig and isfile(MainFolderName.."/"..CurrentConfig) then
-				writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
-				Notify('Конфиг сохранен!', "Одежда добавлена/обновлена и конфиг сохранен.", 3)
+			if CurrentConfig and CurrentConfig ~= "nil" and isfile(MainFolderName.."/"..CurrentConfig) then
+				local success, errorMessage = pcall(function()
+					writefile(MainFolderName.."/"..CurrentConfig, HttpService:JSONEncode(Configuration))
+				end)
+				if success then
+					Notify('Конфиг сохранен!', "Одежда добавлена/обновлена и конфиг сохранен.", 3)
+					print("Конфиг сохранен после добавления/обновления одежды.")
+				else
+					Notify("Ошибка сохранения!", "Не удалось сохранить конфиг после добавления/обновления. Ошибка: " .. errorMessage, 7)
+					print("Ошибка сохранения конфига после добавления/обновления: " .. errorMessage)
+				end
 			else
 				Notify("Ошибка сохранения!", "Текущий конфиг не выбран или не существует.", 5)
+				print("Ошибка: Невозможно сохранить. Текущий конфиг: " .. tostring(CurrentConfig) .. ". Файл существует: " .. tostring(isfile(MainFolderName.."/"..CurrentConfig)))
 			end
 		else
-			Notify("Ошибка!", "Не выбрана одежда для добавления.", 3)
+			Notify("Ошибка!", "Не выбрана одежда для добавления (CurrentObjectText пуст).", 3)
+			print("Ошибка: Не выбрана одежда для добавления.")
 		end
 	end
 })
+print("Кнопка 'Обновить/Создать одежду' создана.")
 
 Settings:CreateInput({
 	Name = "Введите минимальную сумму покупки",
@@ -260,10 +421,11 @@ Settings:CreateInput({
 	RemoveTextAfterFocusLost = true,
 	Flag = "Input1",
 	Callback = function(Texts)
-		MinPrice = Texts:gsub("%D", "")
-		print(MinPrice)
+		MinPrice = Texts:gsub("%D", "") -- Удаляем все нечисловые символы
+		print("MinPrice установлен: " .. MinPrice)
 	end,
 })
+print("Input 'Мин. сумма' создан.")
 
 Settings:CreateInput({
 	Name = "Введите максимальную сумму покупки",
@@ -272,10 +434,11 @@ Settings:CreateInput({
 	RemoveTextAfterFocusLost = true,
 	Flag = "Input1",
 	Callback = function(Texts)
-		MaxPrice = Texts:gsub("%D", "")
-		print(MaxPrice)
+		MaxPrice = Texts:gsub("%D", "") -- Удаляем все нечисловые символы
+		print("MaxPrice установлен: " .. MaxPrice)
 	end,
 })
+print("Input 'Макс. сумма' создан.")
 
 ESP:CreateToggle({
 	Name = "Config ESP",
@@ -335,10 +498,12 @@ ESP:CreateToggle({
 		end
 	end
 })
+print("Toggle 'Config ESP' создан.")
 
 ESP:CreateButton({
 	Name = "Очистить ESP",
 	Callback = function()
+		print("Кнопка 'Очистить ESP' нажата.")
 		for index, store in workspace.World.Debris.Stores:GetChildren() do
 			if not store:FindFirstChild("PlacementContainer") then continue end
 			for index, container in store.PlacementContainer:GetChildren() do
@@ -350,9 +515,12 @@ ESP:CreateButton({
 				end
 			end
 		end
+		Notify("ESP очищен", "Все выделения ESP удалены.", 3)
 	end
 })
+print("Кнопка 'Очистить ESP' создана.")
 
-while task.wait(1) do
+while task.wait(0.1) do -- Уменьшил задержку для более быстрого обновления
 	InformationLabel:Set("Одежда для добавления: ".._G.CurrentObjectText.."\nМин. цена: "..MinPrice.."\n".."Макс. Цена: "..MaxPrice, "rewind")
 end
+print("Скрипт полностью инициализирован и работает.")
